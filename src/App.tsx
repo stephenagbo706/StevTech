@@ -63,7 +63,7 @@ function LoadingScreen() {
         <div className="loading-header-right">
           <div className="loading-node-pill">
             <span className="loading-node-icon"><Icon name="spark" size={14} /></span>
-            <span>NODE: ABT-WEST-01</span>
+            <span>NODE: STEVTECH-01</span>
           </div>
           <div className="loading-node-pill">
             <span className="loading-node-icon"><Icon name="gear" size={14} /></span>
@@ -77,7 +77,7 @@ function LoadingScreen() {
           <div className="loading-logo-glow" />
           <div className="loading-logo-ring" />
           <div className="loading-badge">
-            <img src="/abt-logo.png" alt="Agbenu Bridge TechHub emblem" className="loading-badge-image" />
+            <img src="/ste.png" alt="StevTech logo" className="loading-badge-image" />
           </div>
         </div>
 
@@ -86,7 +86,7 @@ function LoadingScreen() {
             <span className="loading-mini-dot" />
             <span>Autonomous Learning Network</span>
           </div>
-          <h1 className="loading-title">Agbenu Bridge TechHub</h1>
+          <h1 className="loading-title">StevTech</h1>
           <p className="loading-tagline">Learn Technology. Build the Future.</p>
         </div>
 
@@ -195,7 +195,7 @@ function App() {
 }
 
 function BootApp() {
-  const { user } = useApp();
+  const { user, authReady } = useApp();
   const [booting, setBooting] = useState(true);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(() => localStorage.getItem("techhub-sidebar-collapsed") === "1");
 
@@ -208,7 +208,7 @@ function BootApp() {
     localStorage.setItem("techhub-sidebar-collapsed", sidebarCollapsed ? "1" : "0");
   }, [sidebarCollapsed]);
 
-  if (booting) {
+  if (booting || !authReady) {
     return <LoadingScreen />;
   }
 
@@ -243,10 +243,10 @@ function Brand({ collapsed = false }: { collapsed?: boolean }) {
   return (
     <div className={cn("flex items-center gap-2.5 px-1", collapsed && "justify-center px-0")}>
       <span className="flex h-9 w-9 items-center justify-center overflow-hidden rounded-lg border-1.5 border-brand bg-ink2 text-brand">
-        <img src="/abt-logo.png" alt="Agbenu Bridge TechHub logo" className="h-full w-full object-cover" />
+        <img src="/ste.png" alt="StevTech logo" className="h-full w-full object-cover" />
       </span>
       <div className={cn(collapsed && "sr-only")}>
-        <div className="font-display text-[15px] font-bold leading-none tracking-tight text-paper">Agbenu Bridge TechHub</div>
+        <div className="font-display text-[15px] font-bold leading-none tracking-tight text-paper">StevTech</div>
         <div className="mt-0.5 font-mono text-[9px] uppercase tracking-[0.22em] text-paper/45">Learn Technology. Build the Future.</div>
       </div>
     </div>
@@ -406,7 +406,7 @@ function Topbar() {
           <Icon name="menu" size={17} />
         </button>
         <div className="font-mono text-[11px] font-medium uppercase tracking-[0.14em] text-mute">
-          {CRUMB[route.name] ?? "Agbenu Bridge TechHub"}
+          {CRUMB[route.name] ?? "StevTech"}
         </div>
         <div className="ml-auto flex items-center gap-2">
           {user.role === "student" && (

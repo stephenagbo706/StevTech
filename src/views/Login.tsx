@@ -1,16 +1,10 @@
 import { useState } from "react";
 import { useApp } from "../lib/store";
 import { courseMeta } from "../lib/data";
-import { Avatar, Chip, Reveal, cn } from "../components/ui";
+import { Reveal, cn } from "../components/ui";
 import { Icon } from "../components/icons";
 
 const PHILOSOPHY = ["LEARN", "PRACTICE", "BUILD", "SOLVE", "INNOVATE"];
-
-const ROLE_CHIP: Record<string, string> = {
-  student: "bg-brand-soft text-brand-deep",
-  instructor: "bg-gold-soft text-warn",
-  admin: "bg-di-soft text-di",
-};
 
 type AuthMode = "signin" | "join" | "forgot";
 
@@ -37,7 +31,7 @@ function getPasswordStrength(password: string): PasswordStrength {
 
 export default function Login() {
   const app = useApp();
-  const { db, login, register } = app;
+  const { db, login, loginWithGoogle, register, resetPassword } = app;
   const [mode, setMode] = useState<AuthMode>("signin");
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
@@ -49,33 +43,41 @@ export default function Login() {
   const [loading, setLoading] = useState(false);
   const [resetSent, setResetSent] = useState(false);
 
-  const demoIds = ["u-amara", "u-maya", "u-ade"];
-  const accounts = demoIds.map((id) => db.users.find((u) => u.id === id)).filter(Boolean);
-
   const passwordStrength = getPasswordStrength(password);
+
+  const authErrorMessage = (error: unknown): string => {
+    const code = (error as { code?: string })?.code;
+    if (code === "auth/invalid-credential" || code === "auth/user-not-found" || code === "auth/wrong-password") return "Email or password is incorrect.";
+    if (code === "auth/email-already-in-use") return "An account already exists for this email. Sign in instead.";
+    if (code === "auth/weak-password") return "Choose a stronger password with at least 6 characters.";
+    if (code === "auth/popup-closed-by-user") return "Google sign-in was cancelled.";
+    if (code === "auth/unauthorized-domain") return "This domain is not authorized for Firebase sign-in. Add it in Firebase Authentication settings.";
+    return "Authentication failed. Please try again.";
+  };
 
   const validateEmail = (email: string): boolean => {
     return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
   };
 
-  const handleSignIn = async (userId?: string) => {
+  const handleSignIn = async () => {
     setLoading(true);
     setErr(null);
+    try {
+      await login(email, password);
+    } catch (error) {
+      setErr(authErrorMessage(error));
+      setLoading(false);
+    }
+  };
 
-    // Simulate API call
-    await new Promise((resolve) => setTimeout(resolve, 600));
-
-    if (userId) {
-      login(userId);
-    } else {
-      // For demo, just find user by email
-      const foundUser = db.users.find((u) => u.email.toLowerCase() === email.toLowerCase());
-      if (foundUser) {
-        login(foundUser.id);
-      } else {
-        setErr("Unable to sign in. Please check your credentials and try again.");
-        setLoading(false);
-      }
+  const handleGoogleSignIn = async () => {
+    setLoading(true);
+    setErr(null);
+    try {
+      await loginWithGoogle();
+    } catch (error) {
+      setErr(authErrorMessage(error));
+      setLoading(false);
     }
   };
 
@@ -102,17 +104,12 @@ export default function Login() {
 
     setLoading(true);
 
-    // Simulate API call
-    await new Promise((resolve) => setTimeout(resolve, 800));
-
-    // Register creates user, sets session, and navigates to dashboard
-    // Dashboard will show course selection if no active course
-    const error = register(name, email);
-    if (error) {
-      setErr(error);
+    try {
+      await register(name, email, password);
+    } catch (error) {
+      setErr(authErrorMessage(error));
       setLoading(false);
     }
-    // If no error, user is automatically logged in and navigated to dashboard
   };
 
   const handleForgotPassword = async () => {
@@ -126,11 +123,14 @@ export default function Login() {
 
     setLoading(true);
 
-    // Simulate API call
-    await new Promise((resolve) => setTimeout(resolve, 600));
-
-    setLoading(false);
-    setResetSent(true);
+    try {
+      await resetPassword(email);
+      setResetSent(true);
+    } catch (error) {
+      setErr(authErrorMessage(error));
+    } finally {
+      setLoading(false);
+    }
   };
 
   // Authentication forms
@@ -141,10 +141,10 @@ export default function Login() {
         <div>
           <div className="flex items-center gap-3">
             <span className="flex h-10 w-10 items-center justify-center overflow-hidden rounded-lg border-1.5 border-brand bg-ink2 text-brand">
-              <img src="/abt-logo.png" alt="Agbenu Bridge TechHub logo" className="h-full w-full object-cover" />
+              <img src="/ste.png" alt="StevTech logo" className="h-full w-full object-cover" />
             </span>
             <div>
-              <div className="font-display text-lg font-bold leading-none tracking-tight">Agbenu Bridge TechHub</div>
+              <div className="font-display text-lg font-bold leading-none tracking-tight">StevTech</div>
               <div className="mt-1 font-mono text-[10px] uppercase tracking-[0.22em] text-paper/50">Learn Technology. Build the Future.</div>
             </div>
           </div>
@@ -205,10 +205,10 @@ export default function Login() {
         <div className="mx-auto w-full max-w-md">
           <div className="mb-8 flex items-center gap-3 lg:hidden">
             <span className="flex h-10 w-10 items-center justify-center overflow-hidden rounded-lg border-1.5 border-ink bg-ink text-brand">
-              <img src="/abt-logo.png" alt="Agbenu Bridge TechHub logo" className="h-full w-full object-cover" />
+              <img src="/ste.png" alt="StevTech logo" className="h-full w-full object-cover" />
             </span>
             <div>
-              <div className="font-display text-lg font-bold leading-none tracking-tight">Agbenu Bridge TechHub</div>
+              <div className="font-display text-lg font-bold leading-none tracking-tight">StevTech</div>
               <div className="mt-0.5 font-mono text-[10px] uppercase tracking-[0.22em] text-mute">Learn Technology. Build the Future.</div>
             </div>
           </div>
@@ -331,39 +331,14 @@ export default function Login() {
               </Reveal>
 
               <Reveal delay={240}>
-                <div className="mt-6">
-                  <div className="relative">
-                    <div className="absolute inset-0 flex items-center">
-                      <div className="w-full border-t border-line"></div>
-                    </div>
-                    <div className="relative flex justify-center text-xs uppercase">
-                      <span className="bg-paper px-2 font-mono text-[10px] tracking-wider text-mute">Or use demo account</span>
-                    </div>
-                  </div>
-
-                  <div className="mt-4 space-y-3">
-                    {accounts.map((u, i) => u && (
-                      <button
-                        key={u.id}
-                        onClick={() => handleSignIn(u.id)}
-                        disabled={loading}
-                        className="card-ink card-ink-hover group flex w-full items-center gap-4 bg-card px-4 py-3.5 text-left focus-ring disabled:opacity-50"
-                      >
-                        <Avatar user={u} size={42} />
-                        <div className="min-w-0 flex-1">
-                          <div className="flex flex-wrap items-center gap-2">
-                            <span className="font-display text-[15px] font-semibold">{u.name}</span>
-                            <Chip className={ROLE_CHIP[u.role]}>{u.role}</Chip>
-                          </div>
-                          <div className="mt-0.5 truncate text-xs text-mute">{u.title} · {u.email}</div>
-                        </div>
-                        <span className="flex items-center gap-1 font-mono text-[11px] uppercase tracking-wider text-brand-deep transition-transform group-hover:translate-x-0.5">
-                          {loading ? <span className="h-4 w-4 animate-spin rounded-full border-2 border-brand/30 border-t-brand" /> : <>Enter <Icon name="arrowR" size={14} /></>}
-                        </span>
-                      </button>
-                    ))}
-                  </div>
-                </div>
+                <button
+                  className="btn mt-4 w-full border-1.5 border-line bg-card text-ink hover:bg-paper"
+                  onClick={handleGoogleSignIn}
+                  disabled={loading}
+                >
+                  <span className="font-display text-base font-bold text-brand-deep">G</span>
+                  Continue with Google
+                </button>
               </Reveal>
             </>
           )}
@@ -573,9 +548,8 @@ export default function Login() {
 
           <Reveal delay={480}>
             <div className="mt-8 rounded-lg border-1.5 border-line bg-card/70 px-4 py-3 text-xs leading-relaxed text-mute">
-              <span className="font-semibold text-ink">Demo environment.</span> Cohort accounts are pre-provisioned with realistic
-              data. Everything you do — lessons, quizzes, submissions, reviews — persists in this browser and flows
-              through the same state engine a hosted API would serve. Reset anytime from Profile → Danger zone.
+              <span className="font-semibold text-ink">Learning data is stored locally.</span> Your Firebase account secures sign-in;
+              lessons, quizzes, submissions, and progress currently remain in this browser.
             </div>
           </Reveal>
         </div>

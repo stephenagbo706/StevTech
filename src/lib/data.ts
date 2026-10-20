@@ -246,7 +246,7 @@ export const PROJECTS: Project[] = [
   },
   {
     id: "p-di-gd-7", code: "PRJ-GD-07", title: "AI Bootcamp Flyer",
-    brief: "Design a flyer for Agbenu Bridge TechHub's AI Bootcamp with event name, date, time, location, registration information, logo, colors, and CTA.",
+    brief: "Design a flyer for StevTech's AI Bootcamp with event name, date, time, location, registration information, logo, colors, and CTA.",
     objectives: ["Prioritize event information", "Create a clear CTA", "Apply consistent branding"],
     courseIds: ["c-di"], difficulty: "Independent", hours: 4,
     milestones: [

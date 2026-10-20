@@ -1,12 +1,23 @@
 import { createContext, useContext, useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import confetti from "canvas-confetti";
+import {
+  createUserWithEmailAndPassword,
+  GoogleAuthProvider,
+  onAuthStateChanged,
+  sendPasswordResetEmail,
+  signInWithEmailAndPassword,
+  signInWithPopup,
+  signOut,
+  updateProfile,
+} from "firebase/auth";
 import type {
   Activity, AppNotification, Assessment, Attempt, Course, DB, Lesson, Project, Question,
   StudentState, Topic, User, Video, LiveClass,
 } from "./types";
 import { buildSeedDB, syncStudent, uid as newId } from "./data";
 import type { Career } from "./data";
+import { firebaseAuth } from "./firebase";
 
 // ─── Routing ────────────────────────────────────────────────────────────────
 
@@ -22,7 +33,6 @@ export interface Rec { kind: "lesson" | "assessment" | "project" | "activity"; i
 export interface Toast { id: string; msg: string; kind: "ok" | "info" | "warn" | "trophy"; }
 
 const LS_DB = "techfoundry-db-v1";
-const LS_SESSION = "techfoundry-session-v1";
 
 const LEVELS = [
   { xp: 0, name: "Explorer" },
@@ -115,11 +125,14 @@ interface Ctx {
   db: DB;
   user: User | null;
   st: StudentState | null;
+  authReady: boolean;
   route: Route;
   nav: (r: Route) => void;
-  login: (userId: string) => void;
-  register: (name: string, email: string) => string | null;
-  logout: () => void;
+  login: (email: string, password: string) => Promise<void>;
+  loginWithGoogle: () => Promise<void>;
+  register: (name: string, email: string, password: string) => Promise<void>;
+  resetPassword: (email: string) => Promise<void>;
+  logout: () => Promise<void>;
   resetAll: () => void;
   toasts: Toast[];
   toast: (msg: string, kind?: Toast["kind"]) => void;
@@ -203,7 +216,8 @@ export function useApp(): Ctx {
 export function AppProvider({ children }: { children: ReactNode }) {
   const [db, setDb] = useState<DB>(loadDB);
   const dbRef = useRef(db);
-  const [sessionId, setSessionId] = useState<string | null>(() => localStorage.getItem(LS_SESSION));
+  const [sessionId, setSessionId] = useState<string | null>(null);
+  const [authReady, setAuthReady] = useState(false);
   const [route, setRoute] = useState<Route>({ name: "dashboard" });
   const [toasts, setToasts] = useState<Toast[]>([]);
   const [notifOpen, setNotifOpen] = useState(false);
@@ -855,54 +869,72 @@ export function AppProvider({ children }: { children: ReactNode }) {
     toast("Announcement sent to all students", "ok");
   };
 
-  const login = (userId: string) => {
-    const u = db.users.find((x) => x.id === userId);
-    if (!u) return;
-    localStorage.setItem(LS_SESSION, userId);
-    setSessionId(userId);
-    setRoute({ name: u.role === "student" ? "dashboard" : "admin" });
-    window.scrollTo(0, 0);
-    toast(`Signed in as ${u.name} · ${u.role}`, "info");
+  const login = async (email: string, password: string) => {
+    await signInWithEmailAndPassword(firebaseAuth, email.trim(), password);
   };
 
-  const register = (name: string, email: string): string | null => {
-    const nm = name.trim();
-    const em = email.trim().toLowerCase();
-    if (nm.length < 2) return "Enter your full name.";
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(em)) return "Enter a valid email address.";
-    if (db.users.some((u) => u.email.toLowerCase() === em)) return "That email is already registered — use cohort sign-in.";
-    const id = `u-${newId()}`;
-    const hue = Math.floor(Math.random() * 360);
+  const loginWithGoogle = async () => {
+    await signInWithPopup(firebaseAuth, new GoogleAuthProvider());
+  };
+
+  const register = async (name: string, email: string, password: string) => {
+    const credential = await createUserWithEmailAndPassword(firebaseAuth, email.trim(), password);
+    const displayName = name.trim();
+    await updateProfile(credential.user, { displayName });
     mutate((d) => {
-      d.users.push({ id, name: nm, email: em, role: "student", hue, joinedAt: Date.now(), active: true, title: "Student · Self-enrolled" });
-      d.students[id] = { lessons: {}, activities: {}, attempts: [], projects: {}, skills: {}, achievements: {}, certificates: [], xp: 0, enrollments: [], videoProgress: {} };
-      const list = d.notifications[id] ?? (d.notifications[id] = []);
-      list.unshift({
-        id: `n-${newId()}`, at: Date.now(), read: false, kind: "system",
-        title: "Welcome to Agbenu Bridge TechHub",
-        body: "Your workspace is ready. Four courses are open — most builders start with Artificial Intelligence, then follow the path.",
-      });
-      log(d, id, "system", "joined the platform");
+      const savedUser = d.users.find((item) => item.id === credential.user.uid);
+      if (savedUser) savedUser.name = displayName;
     });
-    localStorage.setItem(LS_SESSION, id);
-    setSessionId(id);
-    setRoute({ name: "dashboard" });
-    window.scrollTo(0, 0);
-    toast(`Workspace created — welcome, ${nm.split(" ")[0]}`, "ok");
-    return null;
   };
 
-  const logout = () => {
-    localStorage.removeItem(LS_SESSION);
-    setSessionId(null);
+  const resetPassword = async (email: string) => {
+    await sendPasswordResetEmail(firebaseAuth, email.trim());
+  };
+
+  const logout = async () => {
+    await signOut(firebaseAuth);
     setRoute({ name: "dashboard" });
   };
 
   const resetAll = () => {
     localStorage.removeItem(LS_DB);
-    localStorage.removeItem(LS_SESSION);
     window.location.reload();
   };
+
+  useEffect(() => onAuthStateChanged(firebaseAuth, (firebaseUser) => {
+    if (!firebaseUser) {
+      setSessionId(null);
+      setAuthReady(true);
+      return;
+    }
+
+    const id = firebaseUser.uid;
+    const email = firebaseUser.email ?? "";
+    const name = firebaseUser.displayName?.trim() || email.split("@")[0] || "Student";
+    const existing = dbRef.current.users.find((item) => item.id === id);
+    mutate((d) => {
+      const savedUser = d.users.find((item) => item.id === id);
+      if (savedUser) {
+        savedUser.name = name;
+        savedUser.email = email;
+      } else {
+        d.users.push({ id, name, email, role: "student", hue: Math.floor(Math.random() * 360), joinedAt: Date.now(), active: true, title: "Student · Self-enrolled" });
+        const list = d.notifications[id] ?? (d.notifications[id] = []);
+        list.unshift({
+          id: `n-${newId()}`, at: Date.now(), read: false, kind: "system",
+          title: "Welcome to StevTech",
+          body: "Your workspace is ready. Four courses are open — most builders start with Artificial Intelligence, then follow the path.",
+        });
+        log(d, id, "system", "joined the platform");
+      }
+      if (!d.students[id]) {
+        d.students[id] = { lessons: {}, activities: {}, attempts: [], projects: {}, skills: {}, achievements: {}, certificates: [], xp: 0, enrollments: [], videoProgress: {} };
+      }
+    });
+    setSessionId(id);
+    setRoute({ name: existing?.role === "admin" || existing?.role === "instructor" ? "admin" : "dashboard" });
+    setAuthReady(true);
+  }), []);
 
   // ── Selectors ──
 
@@ -1149,7 +1181,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   };
 
   const value: Ctx = {
-    db, user, st, route, nav, login, register, logout, resetAll,
+    db, user, st, authReady, route, nav, login, loginWithGoogle, register, resetPassword, logout, resetAll,
     toasts, toast, dismissToast, notifOpen, setNotifOpen, menuOpen, setMenuOpen,
     getUser: (id) => db.users.find((u) => u.id === id),
     getCourse: (id) => db.courses.find((c) => c.id === id),

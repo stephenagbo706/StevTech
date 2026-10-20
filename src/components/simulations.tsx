@@ -582,7 +582,7 @@ export function AICodingToolsSim() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           provider: "deepseek",
-          scenario: "DeepSeek chat inside Agbenu Bridge TechHub",
+          scenario: "DeepSeek chat inside StevTech",
           request: deepSeekPrompt,
           selectedSteps: ["Goal", "Prompt", "Review", "Privacy"],
           missingSteps: [],
@@ -864,7 +864,7 @@ export function AIBuilderLabSim() {
         simulation = { ok: false, score: readiness, title: "Pipeline incomplete", body: `Missing: ${missing.map((id) => aiBuilderComponentInfo[id]?.label ?? id).join(", ")}`, explanation: "Add all required components before testing this AI system." };
       } else if (project.id === "chatbot") {
         const knowsCourses = /course|available|techhub/i.test(chatInput);
-        simulation = { ok: knowsCourses, score: knowsCourses ? 96 : 72, title: knowsCourses ? "Chatbot response generated" : "Try a TechHub course question", body: knowsCourses ? "Agbenu Bridge TechHub offers practical technology education in Artificial Intelligence, Robotics & IoT, Software Engineering & Programming, and Digital Innovation & Entrepreneurship." : "I can answer TechHub course questions best. Try asking what courses are available.", explanation: "The chatbot matched keywords in the user input to predefined TechHub knowledge, then followed its response instructions." };
+        simulation = { ok: knowsCourses, score: knowsCourses ? 96 : 72, title: knowsCourses ? "Chatbot response generated" : "Try a StevTech course question", body: knowsCourses ? "StevTech offers practical technology education in Artificial Intelligence, Robotics & IoT, Software Engineering & Programming, and Digital Innovation & Entrepreneurship." : "I can answer StevTech course questions best. Try asking what courses are available.", explanation: "The chatbot matched keywords in the user input to predefined StevTech knowledge, then followed its response instructions." };
       } else if (project.id === "recommendation") {
         const scores = [
           { course: "Software Engineering", score: 45 + (interests.includes("Coding") ? 22 : 0) + (interests.includes("Websites") ? 14 : 0) + (interests.includes("Mobile Apps") ? 10 : 0) },
@@ -1157,7 +1157,7 @@ const gdProjectBriefs: GDProjectBrief[] = [
   { id: "type", title: "Typography Poster", level: "Beginner", xp: 70, format: "Poster", req: ["Headline", "Subheading", "Body text", "Two font styles"], skills: ["Typography", "Hierarchy"], brief: "Design a poster that shows strong type hierarchy with a headline, subheading, body text, and readable font choices." },
   { id: "layout", title: "Technology Event Poster", level: "Intermediate", xp: 90, format: "Event poster", req: ["Event title", "Date", "Time", "Location", "CTA"], skills: ["Layout", "Information design"], brief: "Design a technology event poster that makes the most important information easy to scan." },
   { id: "logo", title: "Technology Logo", level: "Intermediate", xp: 100, format: "Logo sheet", req: ["Logo mark", "Wordmark", "One-color version", "Short brand meaning"], skills: ["Logo design", "Brand symbols"], brief: "Create a simple technology logo with a mark, wordmark, and a short note explaining the brand idea." },
-  { id: "flyer", title: "AI Bootcamp Flyer", level: "Intermediate", xp: 100, format: "Flyer", req: ["Event title", "Date", "Time", "Location", "CTA", "Logo"], skills: ["Flyer design", "Call to action"], brief: "Design a flyer for Agbenu Bridge TechHub's AI Bootcamp with clear event details and a strong call to action." },
+  { id: "flyer", title: "AI Bootcamp Flyer", level: "Intermediate", xp: 100, format: "Flyer", req: ["Event title", "Date", "Time", "Location", "CTA", "Logo"], skills: ["Flyer design", "Call to action"], brief: "Design a flyer for StevTech's AI Bootcamp with clear event details and a strong call to action." },
   { id: "social", title: "Social Media Campaign", level: "Intermediate", xp: 120, format: "Three posts", req: ["Post 1", "Post 2", "Post 3", "Consistent style"], skills: ["Campaign design", "Content systems"], brief: "Create three social graphics for one campaign, keeping the colors, type, and message consistent." },
   { id: "brand", title: "TechStart Brand Board", level: "Advanced", xp: 200, format: "Mini brand identity", req: ["Logo", "Color palette", "Typography", "Social graphic", "Business card"], skills: ["Brand identity", "Presentation"], brief: "Create a mini brand identity board for TechStart Academy." },
   { id: "photo", title: "Before and After Edit", level: "Intermediate", xp: 120, format: "Photo edit", req: ["Before image", "After image", "Adjustment notes", "Clean crop"], skills: ["Photo editing", "Composition"], brief: "Edit a photo for a technology training advert and show the before, after, and the changes you made." },
