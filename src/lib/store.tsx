@@ -5,19 +5,21 @@ import {
   createUserWithEmailAndPassword,
   GoogleAuthProvider,
   onAuthStateChanged,
+  getIdTokenResult,
   sendPasswordResetEmail,
   signInWithEmailAndPassword,
   signInWithPopup,
   signOut,
   updateProfile,
 } from "firebase/auth";
+import { collection, onSnapshot, query, setDoc, doc } from "firebase/firestore";
 import type {
   Activity, AppNotification, Assessment, Attempt, Course, DB, Lesson, Project, Question,
   StudentState, Topic, User, Video, LiveClass,
 } from "./types";
 import { buildSeedDB, syncStudent, uid as newId } from "./data";
 import type { Career } from "./data";
-import { firebaseAuth } from "./firebase";
+import { firebaseAuth, firebaseDb } from "./firebase";
 
 // ─── Routing ────────────────────────────────────────────────────────────────
 
@@ -218,6 +220,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const dbRef = useRef(db);
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [authReady, setAuthReady] = useState(false);
+  const expectedStaffRole = useRef<"admin" | "instructor" | null>(null);
   const [route, setRoute] = useState<Route>({ name: "dashboard" });
   const [toasts, setToasts] = useState<Toast[]>([]);
   const [notifOpen, setNotifOpen] = useState(false);
@@ -246,6 +249,13 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   const nav = (r: Route) => {
     setRoute(r);
+    let staffPath = "/";
+    if (user?.role === "admin") staffPath = "/admin";
+    else if (user?.role === "instructor") staffPath = "/instructor";
+    const targetPath = r.name === "dashboard" && user?.role === "instructor" ? "/instructor" : staffPath;
+    if (window.location.pathname !== targetPath) {
+      window.history.replaceState(null, "", targetPath);
+    }
     setMenuOpen(false);
     setNotifOpen(false);
     window.scrollTo({ top: 0, behavior: "instant" as ScrollBehavior });
@@ -443,6 +453,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
         }
       }
     });
+    void setDoc(doc(firebaseDb, "liveClasses", newClass.id), newClass).catch((error: unknown) => {
+      console.error("Unable to publish live class to shared storage", error);
+      toast("Class saved on this device, but could not be shared with students", "warn");
+    });
     toast(newClass.status === "live" ? "Live classroom opened" : "Live class scheduled", "ok");
     return newClass;
   };
@@ -468,6 +482,13 @@ export function AppProvider({ children }: { children: ReactNode }) {
         });
       }
     });
+    const liveClass = dbRef.current.liveClasses.find((item) => item.id === classId);
+    if (liveClass) {
+      void setDoc(doc(firebaseDb, "liveClasses", classId), liveClass).catch((error: unknown) => {
+        console.error("Unable to publish live class status", error);
+        toast("The class status could not be shared with students", "warn");
+      });
+    }
     toast("Class is now live!", "ok");
   };
 
@@ -499,6 +520,13 @@ export function AppProvider({ children }: { children: ReactNode }) {
         });
       }
     });
+    const liveClass = dbRef.current.liveClasses.find((item) => item.id === classId);
+    if (liveClass) {
+      void setDoc(doc(firebaseDb, "liveClasses", classId), liveClass).catch((error: unknown) => {
+        console.error("Unable to publish completed live class", error);
+        toast("The class status could not be shared with students", "warn");
+      });
+    }
     toast("Class ended", "ok");
   };
 
@@ -870,11 +898,32 @@ export function AppProvider({ children }: { children: ReactNode }) {
   };
 
   const login = async (email: string, password: string) => {
-    await signInWithEmailAndPassword(firebaseAuth, email.trim(), password);
+    const expectedRole = window.location.pathname === "/admin" ? "admin" : window.location.pathname === "/instructor" ? "instructor" : null;
+    expectedStaffRole.current = expectedRole;
+    const credential = await signInWithEmailAndPassword(firebaseAuth, email.trim(), password);
+    await verifyStaffWorkspace(credential.user, expectedRole);
   };
 
   const loginWithGoogle = async () => {
-    await signInWithPopup(firebaseAuth, new GoogleAuthProvider());
+    const expectedRole = window.location.pathname === "/admin" ? "admin" : window.location.pathname === "/instructor" ? "instructor" : null;
+    expectedStaffRole.current = expectedRole;
+    const credential = await signInWithPopup(firebaseAuth, new GoogleAuthProvider());
+    await verifyStaffWorkspace(credential.user, expectedRole);
+  };
+
+  const verifyStaffWorkspace = async (
+    firebaseUser: import("firebase/auth").User,
+    expectedRole: "admin" | "instructor" | null,
+  ) => {
+    if (!expectedRole) return;
+
+    const tokenResult = await getIdTokenResult(firebaseUser, true);
+    if (tokenResult.claims.role !== expectedRole) {
+      const error = new Error(`This account does not have the ${expectedRole} role.`) as Error & { code: string };
+      error.code = "auth/wrong-role";
+      throw error;
+    }
+    expectedStaffRole.current = null;
   };
 
   const register = async (name: string, email: string, password: string) => {
@@ -894,6 +943,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const logout = async () => {
     await signOut(firebaseAuth);
     setRoute({ name: "dashboard" });
+    window.history.replaceState(null, "", "/");
   };
 
   const resetAll = () => {
@@ -901,8 +951,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
     window.location.reload();
   };
 
-  useEffect(() => onAuthStateChanged(firebaseAuth, (firebaseUser) => {
+  useEffect(() => onAuthStateChanged(firebaseAuth, async (firebaseUser) => {
     if (!firebaseUser) {
+      expectedStaffRole.current = null;
       setSessionId(null);
       setAuthReady(true);
       return;
@@ -911,14 +962,24 @@ export function AppProvider({ children }: { children: ReactNode }) {
     const id = firebaseUser.uid;
     const email = firebaseUser.email ?? "";
     const name = firebaseUser.displayName?.trim() || email.split("@")[0] || "Student";
-    const existing = dbRef.current.users.find((item) => item.id === id);
+    const tokenResult = await getIdTokenResult(firebaseUser, true);
+    const claimedRole = tokenResult.claims.role;
+    const role = claimedRole === "admin" || claimedRole === "instructor" ? claimedRole : "student";
+    if (expectedStaffRole.current && role !== expectedStaffRole.current) {
+      setSessionId(null);
+      setAuthReady(true);
+      void signOut(firebaseAuth);
+      return;
+    }
+    expectedStaffRole.current = null;
     mutate((d) => {
       const savedUser = d.users.find((item) => item.id === id);
       if (savedUser) {
         savedUser.name = name;
         savedUser.email = email;
+        savedUser.role = role;
       } else {
-        d.users.push({ id, name, email, role: "student", hue: Math.floor(Math.random() * 360), joinedAt: Date.now(), active: true, title: "Student · Self-enrolled" });
+        d.users.push({ id, name, email, role, hue: Math.floor(Math.random() * 360), joinedAt: Date.now(), active: true, title: role === "student" ? "Student · Self-enrolled" : role === "admin" ? "Administrator" : "Instructor" });
         const list = d.notifications[id] ?? (d.notifications[id] = []);
         list.unshift({
           id: `n-${newId()}`, at: Date.now(), read: false, kind: "system",
@@ -932,9 +993,31 @@ export function AppProvider({ children }: { children: ReactNode }) {
       }
     });
     setSessionId(id);
-    setRoute({ name: existing?.role === "admin" || existing?.role === "instructor" ? "admin" : "dashboard" });
+    const isAdmin = role === "admin";
+    const isInstructor = role === "instructor";
+    let rolePath = "/";
+    if (isAdmin) rolePath = "/admin";
+    else if (isInstructor) rolePath = "/instructor";
+    window.history.replaceState(null, "", rolePath);
+    setRoute({ name: isAdmin ? "admin" : "dashboard" });
     setAuthReady(true);
   }), []);
+
+  useEffect(() => {
+    if (!user) return;
+    return onSnapshot(query(collection(firebaseDb, "liveClasses")), (snapshot) => {
+      const sharedClasses = snapshot.docs.map((item) => item.data() as LiveClass);
+      mutate((next) => {
+        const classById = new Map(sharedClasses.map((liveClass) => [liveClass.id, liveClass]));
+        next.liveClasses = [
+          ...next.liveClasses.filter((liveClass) => !classById.has(liveClass.id)),
+          ...sharedClasses,
+        ];
+      });
+    }, (error) => {
+      console.error("Unable to sync shared live classes", error);
+    });
+  }, [user?.id]);
 
   // ── Selectors ──
 

@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useApp } from "../lib/store";
 import { courseMeta } from "../lib/data";
 import { Avatar, Bar, Chip, CourseTag, Modal, Reveal, SectionHead, Seg, StatTile, StatusPill, cn, timeAgo } from "../components/ui";
@@ -6,12 +6,15 @@ import { Icon } from "../components/icons";
 import type { IconName } from "../components/icons";
 import type { LiveClass, Project, User } from "../lib/types";
 import AdminContent from "./AdminContent";
+import Dashboard from "./Dashboard";
+import { firebaseAuth } from "../lib/firebase";
 
 const TABS: { id: string; label: string; icon: IconName }[] = [
   { id: "overview", label: "Overview", icon: "dashboard" },
   { id: "review", label: "Review queue", icon: "clipboard" },
   { id: "content", label: "Content", icon: "book" },
   { id: "liveclasses", label: "Live classes", icon: "video" },
+  { id: "accounts", label: "Accounts", icon: "users" },
   { id: "students", label: "Students", icon: "users" },
   { id: "announce", label: "Announce", icon: "send" },
 ];
@@ -20,12 +23,15 @@ export default function Admin() {
   const app = useApp();
   const tab = app.route.tab ?? "overview";
   const queue = app.pendingQueue();
+  const visibleTabs = app.user?.role === "admin"
+    ? TABS
+    : TABS.filter((item) => item.id !== "students" && item.id !== "announce" && item.id !== "accounts");
 
   return (
     <div>
       <SectionHead
-        kicker="Staff console"
-        title={app.user?.role === "admin" ? "Platform administration" : "Instructor console"}
+        kicker={app.user?.role === "admin" ? "Administrator workspace" : "Instructor workspace"}
+        title={app.user?.role === "admin" ? "Platform administration" : "Teaching console"}
         right={queue.length > 0 && tab !== "review" ? (
           <button className="btn btn-gold btn-sm" onClick={() => app.nav({ name: "admin", tab: "review" })}>
             <Icon name="clipboard" size={13} /> {queue.length} awaiting review
@@ -33,7 +39,7 @@ export default function Admin() {
         ) : undefined}
       />
       <div className="mb-6 flex flex-wrap gap-1.5">
-        {TABS.map((t) => (
+        {visibleTabs.map((t) => (
           <button
             key={t.id}
             onClick={() => app.nav({ name: "admin", tab: t.id })}
@@ -47,13 +53,162 @@ export default function Admin() {
           </button>
         ))}
       </div>
-      {tab === "overview" && <Overview />}
+      {tab === "overview" && (app.user?.role === "admin" ? <Overview /> : <Dashboard />)}
       {tab === "review" && <Review />}
       {tab === "content" && <AdminContent />}
       {tab === "liveclasses" && <LiveClassManagement />}
+      {tab === "accounts" && app.user?.role === "admin" && <Accounts />}
       {tab === "students" && <Students />}
       {tab === "announce" && <Announce />}
     </div>
+  );
+}
+
+interface ManagedAccount {
+  id: string;
+  email: string;
+  displayName: string;
+  role: "student" | "instructor" | "admin";
+  disabled: boolean;
+  createdAt: string;
+  lastSignInAt: string | null;
+}
+
+function Accounts() {
+  const app = useApp();
+  const [accounts, setAccounts] = useState<ManagedAccount[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [removingId, setRemovingId] = useState<string | null>(null);
+  const [updatingId, setUpdatingId] = useState<string | null>(null);
+
+  const loadAccounts = async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const token = await firebaseAuth.currentUser?.getIdToken();
+      if (!token) throw new Error("Sign in again to manage accounts.");
+      const response = await fetch("/api/admin-users", { headers: { Authorization: `Bearer ${token}` } });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error ?? "Could not load accounts.");
+      setAccounts(result.users as ManagedAccount[]);
+    } catch (loadError) {
+      setError(loadError instanceof Error ? loadError.message : "Could not load accounts.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    void loadAccounts();
+  }, []);
+
+  const removeAccount = async (account: ManagedAccount) => {
+    if (account.id === app.user?.id || !confirm(`Permanently remove ${account.email || account.displayName} from Firebase Authentication?`)) return;
+    setRemovingId(account.id);
+    setError(null);
+    try {
+      const token = await firebaseAuth.currentUser?.getIdToken();
+      if (!token) throw new Error("Sign in again to manage accounts.");
+      const response = await fetch("/api/admin-users", {
+        method: "DELETE",
+        headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ uid: account.id }),
+      });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error ?? "Could not remove the account.");
+      setAccounts((current) => current.filter((item) => item.id !== account.id));
+    } catch (removeError) {
+      setError(removeError instanceof Error ? removeError.message : "Could not remove the account.");
+    } finally {
+      setRemovingId(null);
+    }
+  };
+
+  const updateRole = async (account: ManagedAccount, role: ManagedAccount["role"]) => {
+    if (account.role === role) return;
+    setUpdatingId(account.id);
+    setError(null);
+    try {
+      const token = await firebaseAuth.currentUser?.getIdToken();
+      if (!token) throw new Error("Sign in again to manage account roles.");
+      const response = await fetch("/api/admin-users", {
+        method: "PATCH",
+        headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ uid: account.id, role }),
+      });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error ?? "Could not update the account role.");
+      setAccounts((current) => current.map((item) => item.id === account.id ? { ...item, role } : item));
+    } catch (roleError) {
+      setError(roleError instanceof Error ? roleError.message : "Could not update the account role.");
+      await loadAccounts();
+    } finally {
+      setUpdatingId(null);
+    }
+  };
+
+  return (
+    <section className="card-ink overflow-hidden bg-card">
+      <div className="flex flex-wrap items-end justify-between gap-3 border-b-1.5 border-line px-5 py-4 sm:px-6">
+        <div>
+          <div className="font-mono text-[10px] uppercase tracking-[0.14em] text-mute">Firebase Authentication</div>
+          <h2 className="mt-1 font-display text-xl font-bold tracking-tight">User accounts</h2>
+          <p className="mt-1 text-xs text-mute">Manage login access and assigned workspace roles.</p>
+        </div>
+        <button className="btn btn-ghost btn-sm" onClick={() => void loadAccounts()} disabled={loading} title="Refresh accounts" aria-label="Refresh accounts">
+          <Icon name="refresh" size={14} /> Refresh
+        </button>
+      </div>
+
+      {error && <div role="alert" className="m-4 rounded-md border border-danger/30 bg-danger/5 px-3 py-2 text-sm text-danger">{error}</div>}
+      {loading ? (
+        <p className="px-5 py-10 text-center text-sm text-mute">Loading accounts…</p>
+      ) : accounts.length === 0 ? (
+        <p className="px-5 py-10 text-center text-sm text-mute">No Firebase accounts found.</p>
+      ) : (
+        <div className="divide-y divide-line">
+          {accounts.map((account) => {
+            const isCurrentUser = account.id === app.user?.id;
+            const signedIn = account.lastSignInAt ? timeAgo(new Date(account.lastSignInAt).getTime()) : "Never signed in";
+            return (
+              <div key={account.id} className="flex flex-wrap items-center gap-3 px-5 py-3.5 sm:px-6">
+                <span className={cn("flex h-9 w-9 shrink-0 items-center justify-center rounded-md font-mono text-xs font-bold", account.role === "admin" ? "bg-gold-soft text-[#8a5a06]" : account.role === "instructor" ? "bg-brand-soft text-brand-deep" : "bg-paper text-mute")}>
+                  {account.displayName.split(/\s+/).map((part) => part[0]).slice(0, 2).join("").toUpperCase() || "U"}
+                </span>
+                <span className="min-w-0 flex-1">
+                  <span className="flex flex-wrap items-center gap-2 text-sm font-bold">
+                    {account.displayName || account.email || "Unnamed account"}
+                    <Chip className={account.role === "admin" ? "bg-gold-soft text-[#8a5a06]" : account.role === "instructor" ? "bg-brand-soft text-brand-deep" : "bg-paper text-mute"}>{account.role}</Chip>
+                    {account.disabled && <Chip className="bg-danger/10 text-danger">Disabled</Chip>}
+                  </span>
+                  <span className="mt-0.5 block truncate font-mono text-[10px] text-mute">{account.email || account.id} · Last sign-in: {signedIn}</span>
+                </span>
+                <select
+                  className="inp w-auto min-w-32 py-1.5 text-xs"
+                  aria-label={`Role for ${account.email || account.displayName}`}
+                  value={account.role}
+                  disabled={updatingId === account.id || isCurrentUser}
+                  onChange={(event) => void updateRole(account, event.target.value as ManagedAccount["role"])}
+                >
+                  <option value="student">Student</option>
+                  <option value="instructor">Instructor</option>
+                  <option value="admin">Admin</option>
+                </select>
+                <button
+                  className="btn btn-ghost btn-sm text-danger"
+                  onClick={() => void removeAccount(account)}
+                  disabled={isCurrentUser || removingId === account.id}
+                  title={isCurrentUser ? "You cannot remove your current admin account" : "Remove this Firebase account"}
+                >
+                  <Icon name="trash" size={13} /> {removingId === account.id ? "Removing…" : isCurrentUser ? "You" : "Remove"}
+                </button>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </section>
   );
 }
 
@@ -246,6 +401,28 @@ function Overview() {
 
   return (
     <div className="space-y-6">
+      <Reveal>
+        <section className="card-ink overflow-hidden bg-card">
+          <div className="grid gap-5 p-5 sm:p-6 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-end">
+            <div>
+              <div className="font-mono text-[10px] uppercase tracking-[0.16em] text-mute">Platform operations · {new Date().toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric" })}</div>
+              <h2 className="mt-1 font-display text-2xl font-bold tracking-tight">Good {new Date().getHours() < 12 ? "morning" : new Date().getHours() < 18 ? "afternoon" : "evening"}, {app.user?.name.split(" ")[0]}.</h2>
+              <p className="mt-1.5 text-sm text-mute">A live view of learner progress, curriculum, and platform activity.</p>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <button className="btn btn-dark btn-sm" onClick={() => app.nav({ name: "admin", tab: "content" })}><Icon name="book" size={13} /> Edit curriculum</button>
+              <button className="btn btn-gold btn-sm" onClick={() => app.nav({ name: "admin", tab: "announce" })}><Icon name="send" size={13} /> New announcement</button>
+            </div>
+          </div>
+          <div className="flex flex-wrap items-center gap-x-5 gap-y-2 border-t-1.5 border-line bg-paper/60 px-5 py-3 font-mono text-[10px] uppercase tracking-[0.12em] text-mute sm:px-6">
+            <span className="flex items-center gap-2"><span className="h-2 w-2 rounded-full bg-se" /> Learning services ready</span>
+            <span>{students.length} learner accounts</span>
+            <span>{db.courses.length} active courses</span>
+            <button className="text-brand-deep hover:underline" onClick={() => app.nav({ name: "admin", tab: "students" })}>Open learner directory <Icon name="arrowR" size={11} /></button>
+          </div>
+        </section>
+      </Reveal>
+
       <Reveal>
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
           <StatTile icon="users" label="Students" value={students.length} sub="enrolled cohort" />

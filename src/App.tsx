@@ -259,6 +259,7 @@ function NavContent({ collapsed = false, onToggle }: { collapsed?: boolean; onTo
   if (!user) return null;
   const isStaff = user.role !== "student";
   const activeName = ACTIVE_MAP[route.name] ?? route.name;
+  const staffHomeActive = isStaff && (user.role === "admin" ? route.name === "admin" : route.name === "dashboard");
 
   return (
     <>
@@ -280,15 +281,15 @@ function NavContent({ collapsed = false, onToggle }: { collapsed?: boolean; onTo
           <div>
             <div className={cn("mb-1.5 px-3 font-mono text-[9.5px] uppercase tracking-[0.18em] text-paper/35", collapsed && "sr-only")}>Staff</div>
             <button
-              onClick={() => app.nav({ name: "admin" })}
-              title={collapsed ? "Admin console" : undefined}
+              onClick={() => app.nav({ name: user.role === "admin" ? "admin" : "dashboard" })}
+              title={collapsed ? (user.role === "admin" ? "Admin console" : "Instructor workspace") : undefined}
               className={cn(
                 "flex w-full items-center rounded-md py-2 text-sm font-semibold transition-colors",
                 collapsed ? "justify-center px-0" : "gap-2.5 px-3",
-                route.name === "admin" ? "bg-paper/12 text-gold" : "text-paper/70 hover:bg-paper/8 hover:text-paper",
+                staffHomeActive ? "bg-paper/12 text-gold" : "text-paper/70 hover:bg-paper/8 hover:text-paper",
               )}
             >
-              <Icon name="shield" size={16} /> <span className={cn(collapsed && "sr-only")}>Admin console</span>
+              <Icon name="shield" size={16} /> <span className={cn(collapsed && "sr-only")}>{user.role === "admin" ? "Admin console" : "Instructor workspace"}</span>
               <span className={cn("dot-live h-1.5 w-1.5 rounded-full bg-gold", collapsed ? "absolute ml-6 mt-[-18px]" : "ml-auto")} />
             </button>
           </div>
@@ -406,7 +407,9 @@ function Topbar() {
           <Icon name="menu" size={17} />
         </button>
         <div className="font-mono text-[11px] font-medium uppercase tracking-[0.14em] text-mute">
-          {CRUMB[route.name] ?? "StevTech"}
+          {user.role === "admin" ? `Admin / ${route.name === "admin" ? "Operations" : CRUMB[route.name] ?? "Workspace"}`
+            : user.role === "instructor" ? `Instructor / ${route.name === "admin" ? "Teaching tools" : route.name === "dashboard" ? "Overview" : CRUMB[route.name] ?? "Workspace"}`
+            : CRUMB[route.name] ?? "StevTech"}
         </div>
         <div className="ml-auto flex items-center gap-2">
           {user.role === "student" && (
@@ -505,8 +508,10 @@ function StaffGate() {
     <div className="card-ink mx-auto mt-10 max-w-md bg-card p-8 text-center">
       <span className="mx-auto flex h-12 w-12 items-center justify-center rounded-lg border-1.5 border-line bg-paper text-brand-deep"><Icon name="shield" size={22} /></span>
       <h2 className="mt-3 font-display text-lg font-bold tracking-tight">Staff workspace</h2>
-      <p className="mt-1.5 text-sm text-mute">Your role works from the console — reviewing submissions, managing content, and monitoring the cohort.</p>
-      <button className="btn btn-dark mt-4" onClick={() => app.nav({ name: "admin" })}><Icon name="shield" size={14} /> Open console</button>
+      <p className="mt-1.5 text-sm text-mute">Open your role-specific workspace to continue.</p>
+      <button className="btn btn-dark mt-4" onClick={() => app.nav({ name: app.user?.role === "admin" ? "admin" : "dashboard" })}>
+        <Icon name="shield" size={14} /> Open workspace
+      </button>
     </div>
   );
 }
@@ -529,10 +534,16 @@ function View() {
   const key = `${route.name}:${route.id ?? ""}:${route.tab ?? ""}`;
 
   let node: ReactNode;
-  if (user.role !== "student") {
+  if (user.role === "admin") {
     if (route.name === "admin") node = <Admin />;
     else if (route.name === "liveclasses") node = <LiveClassesView />;
     else if (route.name === "liveclass") node = <LiveClassroomView classId={route.id ?? ""} />;
+    else node = <StaffGate />;
+  } else if (user.role === "instructor") {
+    if (route.name === "admin" && ["overview", "review", "content", "liveclasses"].includes(route.tab ?? "overview")) node = <Admin />;
+    else if (route.name === "liveclasses") node = <LiveClassesView />;
+    else if (route.name === "liveclass") node = <LiveClassroomView classId={route.id ?? ""} />;
+    else if (route.name === "dashboard") node = <Dashboard />;
     else node = <StaffGate />;
   } else {
     switch (route.name) {

@@ -721,145 +721,149 @@ function InstructorDashboard() {
 
   if (!user) return null;
 
-  const liveNow = db.liveClasses.filter((c) => c.status === "live");
-  const upcoming = db.liveClasses.filter((c) => c.status === "scheduled").slice(0, 3);
+  const instructorClasses = db.liveClasses.filter((liveClass) => liveClass.instructorId === user.id);
+  const liveNow = instructorClasses.filter((liveClass) => liveClass.status === "live");
+  const upcoming = instructorClasses
+    .filter((liveClass) => liveClass.status === "scheduled")
+    .sort((a, b) => a.scheduledAt - b.scheduledAt)
+    .slice(0, 3);
+  const reviewQueue = app.pendingQueue();
+  const studentCount = db.users.filter((item) => item.role === "student").length;
 
   const hour = new Date().getHours();
   const greet = hour < 12 ? "Good morning" : hour < 18 ? "Good afternoon" : "Good evening";
+  const today = new Date().toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric" });
 
   return (
     <div className="space-y-6">
-      {/* Header */}
       <Reveal>
-        <div>
-          <div className="font-mono text-[11px] uppercase tracking-[0.16em] text-brand-deep/80">Instructor Console</div>
-          <h1 className="mt-1 font-display text-3xl font-bold tracking-tight sm:text-4xl">
-            {greet}, {user.name.split(" ")[0]}.
-          </h1>
-        </div>
+        <section className="card-ink overflow-hidden bg-card">
+          <div className="grid gap-6 border-b-1.5 border-line p-5 sm:p-7 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-end">
+            <div>
+              <div className="flex flex-wrap items-center gap-2 font-mono text-[10px] uppercase tracking-[0.16em] text-mute">
+                <span>Instructor workspace</span><span className="text-line">/</span><span>{today}</span>
+              </div>
+              <h1 className="mt-2 font-display text-3xl font-bold tracking-tight sm:text-4xl">
+                {greet}, {user.name.split(" ")[0]}.
+              </h1>
+              <p className="mt-2 max-w-xl text-sm leading-relaxed text-mute">Your teaching day, upcoming classes, and student work that needs your attention.</p>
+            </div>
+            <button onClick={() => app.nav({ name: "admin", tab: "liveclasses" })} className="btn btn-danger w-full sm:w-auto">
+              <Icon name="plus" size={15} /> Schedule a class
+            </button>
+          </div>
+          <div className="grid grid-cols-2 divide-x divide-line sm:grid-cols-4">
+            {[
+              { label: "Live now", value: liveNow.length, tone: "text-danger" },
+              { label: "Upcoming", value: instructorClasses.filter((liveClass) => liveClass.status === "scheduled").length, tone: "text-brand-deep" },
+              { label: "To review", value: reviewQueue.length, tone: "text-warn" },
+              { label: "Learners", value: studentCount, tone: "text-ink" },
+            ].map((stat) => (
+              <div key={stat.label} className="px-4 py-4 sm:px-6">
+                <div className="font-mono text-[10px] uppercase tracking-[0.13em] text-mute">{stat.label}</div>
+                <div className={cn("mt-1 font-display text-2xl font-bold", stat.tone)}>{stat.value}</div>
+              </div>
+            ))}
+          </div>
+        </section>
       </Reveal>
 
-      {/* Quick Actions */}
-      <Reveal delay={70}>
-        <div className="card-ink overflow-hidden bg-card">
-          <div className="h-1.5 w-full bg-danger" />
-          <div className="p-6 sm:p-7">
-            <div className="flex items-center gap-3">
-              <span className="flex h-12 w-12 items-center justify-center rounded-lg border-1.5 border-danger/40 bg-danger/10 text-danger">
-                <Icon name="video" size={24} />
-              </span>
-              <div className="flex-1">
-                <h2 className="font-display text-xl font-bold tracking-tight">Live Virtual Classroom</h2>
-                <p className="mt-1 text-sm text-mute">Start a live class to teach students in real-time with video, screen sharing, and interactive tools.</p>
+      <div className="grid gap-5 lg:grid-cols-[minmax(0,1.35fr)_minmax(260px,0.65fr)]">
+        <Reveal delay={70}>
+          <section className="card-ink h-full overflow-hidden bg-card">
+            <div className="flex items-center justify-between gap-3 border-b-1.5 border-line px-5 py-4">
+              <div>
+                <div className="font-mono text-[10px] uppercase tracking-[0.14em] text-mute">Your schedule</div>
+                <h2 className="mt-0.5 font-display text-lg font-bold tracking-tight">Upcoming classes</h2>
               </div>
-              <button onClick={() => app.nav({ name: "admin", tab: "liveclasses" })} className="btn btn-danger">
-                <Icon name="play" size={15} /> Create Live Class
+              <button className="btn btn-ghost btn-sm text-brand-deep" onClick={() => app.nav({ name: "liveclasses" })}>
+                All classes <Icon name="arrowR" size={13} />
               </button>
             </div>
-          </div>
-        </div>
-      </Reveal>
-
-      {/* Live Now */}
-      {liveNow.length > 0 && (
-        <Reveal delay={120}>
-          <section className="card-ink overflow-hidden bg-card">
-            <div className="flex items-center gap-2 border-b-1.5 border-line bg-danger/5 px-5 py-3">
-              <span className="dot-live h-2 w-2 rounded-full bg-danger" />
-              <span className="font-mono text-[11px] font-bold uppercase tracking-[0.14em] text-danger">Live Now</span>
-            </div>
-            <div className="space-y-2 p-4">
-              {liveNow.map((c) => {
-                const course = app.getCourse(c.courseId);
-                return (
-                  <button
-                    key={c.id}
-                    onClick={() => app.nav({ name: "liveclass", id: c.id })}
-                    className="flex w-full items-center gap-3 rounded-lg border-1.5 border-danger/30 bg-danger/5 px-4 py-3 text-left transition-colors hover:bg-danger/10"
-                  >
-                    <span className="flex items-center gap-1 rounded-full bg-danger px-2 py-0.5 font-mono text-[9px] font-bold uppercase tracking-wider text-white">
-                      <span className="dot-live h-1.5 w-1.5 rounded-full bg-white" />
-                      Live
-                    </span>
-                    <span className="min-w-0 flex-1">
-                      <span className="block truncate text-sm font-semibold">{c.title}</span>
-                      {course && <span className="font-mono text-[10px] uppercase tracking-wider text-mute">{course.short}</span>}
-                    </span>
-                    <span className="btn btn-danger btn-sm shrink-0">Join</span>
-                  </button>
-                );
-              })}
-            </div>
+            {upcoming.length ? (
+              <div className="divide-y divide-line">
+                {upcoming.map((liveClass) => {
+                  const course = app.getCourse(liveClass.courseId);
+                  const date = new Date(liveClass.scheduledAt);
+                  return (
+                    <button key={liveClass.id} onClick={() => app.nav({ name: "liveclass", id: liveClass.id })} className="flex w-full items-center gap-4 px-5 py-4 text-left transition-colors hover:bg-paper/70">
+                      <span className="grid h-12 w-12 shrink-0 place-content-center rounded-md border-1.5 border-line bg-paper text-center">
+                        <span className="font-mono text-[9px] uppercase text-mute">{date.toLocaleDateString(undefined, { month: "short" })}</span>
+                        <span className="font-display text-lg font-bold leading-none">{date.getDate()}</span>
+                      </span>
+                      <span className="min-w-0 flex-1">
+                        <span className="block truncate text-sm font-bold">{liveClass.title}</span>
+                        <span className="mt-1 block truncate font-mono text-[10px] uppercase tracking-wider text-mute">
+                          {date.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" })} · {liveClass.duration} min{course ? ` · ${course.short}` : ""}
+                        </span>
+                      </span>
+                      <Icon name="arrowR" size={14} className="shrink-0 text-mute" />
+                    </button>
+                  );
+                })}
+              </div>
+            ) : (
+              <div className="px-5 py-9 text-center">
+                <Icon name="calendar" size={24} className="mx-auto text-mute/60" />
+                <p className="mt-2 text-sm font-semibold">Your schedule is clear</p>
+                <p className="mt-1 text-xs text-mute">Create a live class when you are ready to teach.</p>
+              </div>
+            )}
           </section>
         </Reveal>
-      )}
 
-      {/* Upcoming Classes */}
-      {upcoming.length > 0 && (
-        <Reveal delay={160}>
-          <section className="card-ink bg-card p-5">
-            <div className="mb-4 flex items-center justify-between">
-              <h3 className="font-display text-lg font-semibold tracking-tight">Upcoming Classes</h3>
-              <button className="btn btn-ghost btn-sm text-brand-deep" onClick={() => app.nav({ name: "liveclasses" })}>
-                View all <Icon name="arrowR" size={13} />
-              </button>
+        <Reveal delay={110}>
+          <section className="card-ink h-full bg-ink p-5 text-paper sm:p-6">
+            <div className="flex items-center gap-2 font-mono text-[10px] uppercase tracking-[0.14em] text-paper/55">
+              <Icon name="clipboard" size={14} className="text-gold" /> Teaching queue
             </div>
-            <div className="space-y-2">
-              {upcoming.map((c) => {
-                const course = app.getCourse(c.courseId);
-                const date = new Date(c.scheduledAt);
-                const isToday = date.toDateString() === new Date().toDateString();
-                const label = isToday ? "Today" : date.toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" });
-                return (
-                  <button
-                    key={c.id}
-                    onClick={() => app.nav({ name: "liveclass", id: c.id })}
-                    className="flex w-full items-center gap-3 rounded-lg border-1.5 border-line bg-paper/50 px-4 py-3 text-left transition-colors hover:bg-paper"
-                  >
-                    <Icon name="calendar" size={16} className="shrink-0 text-mute" />
-                    <span className="min-w-0 flex-1">
-                      <span className="block truncate text-sm font-semibold">{c.title}</span>
-                      <span className="font-mono text-[10px] uppercase tracking-wider text-mute">
-                        {label} · {date.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" })}
-                        {course && ` · ${course.short}`}
-                      </span>
-                    </span>
-                    <Icon name="arrowR" size={13} className="shrink-0 text-mute" />
-                  </button>
-                );
-              })}
+            <div className="mt-5 font-display text-4xl font-bold text-gold">{reviewQueue.length}</div>
+            <h2 className="mt-1 font-display text-lg font-bold">Projects awaiting review</h2>
+            <p className="mt-2 text-sm leading-relaxed text-paper/65">Give learners clear feedback and a concrete next step on their submitted work.</p>
+            <button onClick={() => app.nav({ name: "admin", tab: "review" })} className="btn btn-gold mt-5 w-full justify-center">
+              Open review queue <Icon name="arrowR" size={14} />
+            </button>
+          </section>
+        </Reveal>
+      </div>
+
+      {/* Live classes */}
+      {liveNow.length > 0 && (
+        <Reveal delay={140}>
+          <section className="card-ink overflow-hidden border-danger/40 bg-card">
+            <div className="flex items-center gap-2 border-b-1.5 border-line bg-danger/5 px-5 py-3">
+              <span className="dot-live h-2 w-2 rounded-full bg-danger" />
+              <span className="font-mono text-[11px] font-bold uppercase tracking-[0.14em] text-danger">Your live classes</span>
+            </div>
+            <div className="divide-y divide-line">
+              {liveNow.map((liveClass) => (
+                <button key={liveClass.id} onClick={() => app.nav({ name: "liveclass", id: liveClass.id })} className="flex w-full items-center gap-3 px-5 py-3 text-left hover:bg-danger/5">
+                  <Icon name="video" size={16} className="text-danger" />
+                  <span className="min-w-0 flex-1 truncate text-sm font-semibold">{liveClass.title}</span>
+                  <span className="btn btn-danger btn-sm shrink-0">Open room</span>
+                </button>
+              ))}
             </div>
           </section>
         </Reveal>
       )}
 
       {/* Quick Links */}
-      <Reveal delay={200}>
-        <div className="grid gap-4 sm:grid-cols-3">
-          <button
-            onClick={() => app.nav({ name: "liveclasses" })}
-            className="card-ink card-ink-hover group bg-card p-5 text-left"
-          >
-            <Icon name="video" size={24} className="mb-2 text-brand" />
-            <h3 className="font-display text-sm font-bold">All Live Classes</h3>
-            <p className="mt-1 text-xs text-mute">View and manage all classes</p>
-          </button>
-          <button
-            onClick={() => app.nav({ name: "courses" })}
-            className="card-ink card-ink-hover group bg-card p-5 text-left"
-          >
-            <Icon name="book" size={24} className="mb-2 text-brand" />
-            <h3 className="font-display text-sm font-bold">Courses</h3>
-            <p className="mt-1 text-xs text-mute">Manage course content</p>
-          </button>
-          <button
-            onClick={() => app.nav({ name: "admin" })}
-            className="card-ink card-ink-hover group bg-card p-5 text-left"
-          >
-            <Icon name="shield" size={24} className="mb-2 text-brand" />
-            <h3 className="font-display text-sm font-bold">Admin Console</h3>
-            <p className="mt-1 text-xs text-mute">System administration</p>
-          </button>
+      <Reveal delay={180}>
+        <div className="grid gap-3 sm:grid-cols-3">
+          {[
+            { title: "Manage classes", sub: "Schedule and host sessions", icon: "video" as const, route: { name: "liveclasses" as const } },
+            { title: "Review submissions", sub: "Respond to student projects", icon: "clipboard" as const, route: { name: "admin" as const, tab: "review" } },
+            { title: "Course content", sub: "Maintain lessons and videos", icon: "book" as const, route: { name: "admin" as const, tab: "content" } },
+          ].map((link) => (
+            <button key={link.title} onClick={() => app.nav(link.route)} className="card-ink card-ink-hover flex items-start gap-3 bg-card p-4 text-left">
+              <Icon name={link.icon} size={18} className="mt-0.5 shrink-0 text-brand-deep" />
+              <span>
+                <span className="block text-sm font-bold">{link.title}</span>
+                <span className="mt-1 block text-xs text-mute">{link.sub}</span>
+              </span>
+            </button>
+          ))}
         </div>
       </Reveal>
     </div>

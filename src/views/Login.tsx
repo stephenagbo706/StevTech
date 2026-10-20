@@ -32,6 +32,9 @@ function getPasswordStrength(password: string): PasswordStrength {
 export default function Login() {
   const app = useApp();
   const { db, login, loginWithGoogle, register, resetPassword } = app;
+  const staffEntry = window.location.pathname === "/admin" || window.location.pathname === "/instructor"
+    ? window.location.pathname.slice(1) as "admin" | "instructor"
+    : null;
   const [mode, setMode] = useState<AuthMode>("signin");
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
@@ -44,6 +47,7 @@ export default function Login() {
   const [resetSent, setResetSent] = useState(false);
 
   const passwordStrength = getPasswordStrength(password);
+  const staffTitle = staffEntry === "admin" ? "Administrator sign in" : "Instructor sign in";
 
   const authErrorMessage = (error: unknown): string => {
     const code = (error as { code?: string })?.code;
@@ -51,6 +55,7 @@ export default function Login() {
     if (code === "auth/email-already-in-use") return "An account already exists for this email. Sign in instead.";
     if (code === "auth/weak-password") return "Choose a stronger password with at least 6 characters.";
     if (code === "auth/popup-closed-by-user") return "Google sign-in was cancelled.";
+    if (code === "auth/wrong-role") return `This account is not assigned the ${staffEntry} role. Ask an administrator to update your access.`;
     if (code === "auth/unauthorized-domain") return "This domain is not authorized for Firebase sign-in. Add it in Firebase Authentication settings.";
     return "Authentication failed. Please try again.";
   };
@@ -214,21 +219,25 @@ export default function Login() {
           </div>
 
           <Reveal>
-            <div className="font-mono text-[11px] uppercase tracking-[0.16em] text-brand-deep/80">Authentication</div>
+            <div className="font-mono text-[11px] uppercase tracking-[0.16em] text-brand-deep/80">
+              {staffEntry ? `${staffEntry} workspace` : "Authentication"}
+            </div>
             <h2 className="mt-1 font-display text-3xl font-bold tracking-tight">
-              {mode === "signin" && "Welcome Back"}
+              {mode === "signin" && (staffEntry ? staffTitle : "Welcome Back")}
               {mode === "join" && "Create Your Account"}
               {mode === "forgot" && "Reset Password"}
             </h2>
             <p className="mt-2 text-sm text-mute">
-              {mode === "signin" && "Sign in to continue your technology learning journey."}
+              {mode === "signin" && (staffEntry
+                ? `Sign in with your ${staffEntry} account. Access is granted only to accounts assigned this role.`
+                : "Sign in to continue your technology learning journey.")}
               {mode === "join" && "Start your technology learning journey."}
               {mode === "forgot" && "Enter your email to receive a password reset link."}
             </p>
           </Reveal>
 
           {/* Mode switch */}
-          {mode !== "forgot" && (
+          {mode !== "forgot" && !staffEntry && (
             <Reveal delay={80}>
               <div className="mt-6 grid grid-cols-2 gap-1 rounded-lg border-1.5 border-line bg-paper/70 p-1">
                 {([[["signin", "Sign In"], ["join", "Create Account"]]] as const).flat().map(([m, label]) => (
@@ -321,14 +330,16 @@ export default function Login() {
                 </div>
               </Reveal>
 
-              <Reveal delay={360}>
-                <div className="mt-6 text-center text-sm text-mute">
-                  Don't have an account?{" "}
-                  <button onClick={() => { setMode("join"); setErr(null); }} className="font-semibold text-brand-deep hover:underline">
-                    Create account
-                  </button>
-                </div>
-              </Reveal>
+              {!staffEntry && (
+                <Reveal delay={360}>
+                  <div className="mt-6 text-center text-sm text-mute">
+                    Don't have an account?{" "}
+                    <button onClick={() => { setMode("join"); setErr(null); }} className="font-semibold text-brand-deep hover:underline">
+                      Create account
+                    </button>
+                  </div>
+                </Reveal>
+              )}
 
               <Reveal delay={240}>
                 <button
@@ -344,7 +355,7 @@ export default function Login() {
           )}
 
           {/* Create Account Form */}
-          {mode === "join" && (
+          {mode === "join" && !staffEntry && (
             <>
             <Reveal delay={120}>
               <div className="card-ink mt-5 bg-card p-5">
@@ -546,12 +557,14 @@ export default function Login() {
             </Reveal>
           )}
 
-          <Reveal delay={480}>
-            <div className="mt-8 rounded-lg border-1.5 border-line bg-card/70 px-4 py-3 text-xs leading-relaxed text-mute">
-              <span className="font-semibold text-ink">Learning data is stored locally.</span> Your Firebase account secures sign-in;
-              lessons, quizzes, submissions, and progress currently remain in this browser.
-            </div>
-          </Reveal>
+          {!staffEntry && (
+            <Reveal delay={480}>
+              <div className="mt-8 rounded-lg border-1.5 border-line bg-card/70 px-4 py-3 text-xs leading-relaxed text-mute">
+                <span className="font-semibold text-ink">Learning data is stored locally.</span> Your Firebase account secures sign-in;
+                lessons, quizzes, submissions, and progress currently remain in this browser.
+              </div>
+            </Reveal>
+          )}
         </div>
       </div>
     </div>
